@@ -1,7 +1,7 @@
 pipeline {
     environment {
-        DOCKER_ID = "pendand"
-        DOCKER_TAG = "v.${BUILD_ID}.0"
+        DOCKER_ID = "pendand" // Docker ID
+        DOCKER_TAG = "v.${BUILD_ID}.0" // Tag basé sur le numéro de build
     }
     agent any
     stages {
@@ -10,9 +10,10 @@ pipeline {
                 script {
                     def services = ['cast-service', 'movie-service']
                     services.each { service ->
+                        def DOCKER_IMAGE = "${DOCKER_ID}/${service}:${DOCKER_TAG}"
                         dir(service) {
                             sh """
-                                docker build -t ${DOCKER_ID}/${service}:${DOCKER_TAG} .
+                                docker build -t ${DOCKER_IMAGE} .
                             """
                         }
                     }
@@ -23,10 +24,14 @@ pipeline {
             steps {
                 script {
                     def services = ['cast-service', 'movie-service']
-                    services.each { service ->
+                    def ports = ['8081', '8082'] // Ports distincts pour éviter les conflits
+                    for (int i = 0; i < services.size(); i++) {
+                        def service = services[i]
+                        def port = ports[i]
+                        def DOCKER_IMAGE = "${DOCKER_ID}/${service}:${DOCKER_TAG}"
                         sh """
                             docker rm -f ${service} || true
-                            docker run -d -p 8080:80 --name ${service} ${DOCKER_ID}/${service}:${DOCKER_TAG}
+                            docker run -d -p ${port}:80 --name ${service} ${DOCKER_IMAGE}
                         """
                     }
                 }
@@ -35,9 +40,12 @@ pipeline {
         stage('Test Acceptance') {
             steps {
                 script {
-                    sh """
-                        curl -s http://localhost:8080 || exit 1
-                    """
+                    def ports = ['8081', '8082']
+                    ports.each { port ->
+                        sh """
+                            curl -s http://localhost:${port} || exit 1
+                        """
+                    }
                 }
             }
         }
@@ -50,8 +58,9 @@ pipeline {
                     def services = ['cast-service', 'movie-service']
                     sh "docker login -u ${DOCKER_ID} -p ${DOCKER_PASS}"
                     services.each { service ->
+                        def DOCKER_IMAGE = "${DOCKER_ID}/${service}:${DOCKER_TAG}"
                         sh """
-                            docker push ${DOCKER_ID}/${service}:${DOCKER_TAG}
+                            docker push ${DOCKER_IMAGE}
                         """
                     }
                 }
@@ -68,6 +77,7 @@ pipeline {
 
                     environments.each { env ->
                         services.each { service ->
+                            def DOCKER_IMAGE = "${DOCKER_ID}/${service}:${DOCKER_TAG}"
                             dir(service) {
                                 sh """
                                     rm -Rf .kube
