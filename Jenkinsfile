@@ -37,21 +37,39 @@ pipeline {
                 }
             }
         }
-        stage('Test Acceptance') {
-            steps {
-                script {
-                    def services = [
-                        ['port': '8081', 'endpoint': '/api/v1/casts/docs'],
-                        ['port': '8082', 'endpoint': '/api/v1/movies/docs']
-                    ]
+stage('Test Acceptance') {
+    steps {
+        script {
+            def services = [
+                ['port': '8081', 'endpoint': '/api/v1/casts/docs'],
+                ['port': '8082', 'endpoint': '/api/v1/movies/docs']
+            ]
             services.each { service ->
-                sh """
-                    curl -s http://localhost:${service.port}${service.endpoint} || exit 1
-                """
+                // Attente que le service soit prêt
+                def retryCount = 0
+                def maxRetries = 10
+                def serviceReady = false
+                while (retryCount < maxRetries && !serviceReady) {
+                    def response = sh(script: "curl -s -o /dev/null -w '%{http_code}' http://localhost:${service.port}${service.endpoint}", returnStdout: true).trim()
+                    if (response == '200') {
+                        serviceReady = true
+                        echo "Service ${service.endpoint} is ready"
+                    } else {
+                        retryCount++
+                        echo "Waiting for ${service.endpoint} to be ready (Attempt ${retryCount}/${maxRetries})"
+                        sleep 5 // Attendre 5 secondes avant de réessayer
+                    }
+                }
+
+                // Si après les tentatives le service n'est toujours pas prêt, échouer le test
+                if (!serviceReady) {
+                    error "Service ${service.endpoint} did not become ready after ${maxRetries} attempts"
+                }
             }
         }
     }
 }
+
         stage('Docker Push') {
             environment {
                 DOCKER_PASS = credentials("DOCKER_HUB_PASS")
