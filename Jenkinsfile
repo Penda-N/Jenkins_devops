@@ -40,15 +40,18 @@ pipeline {
         stage('Test Acceptance') {
             steps {
                 script {
-                    def ports = ['8081', '8082']
-                    ports.each { port ->
-                        sh """
-                            curl -s http://localhost:${port} || exit 1
-                        """
-                    }
-                }
+                    def services = [
+                        ['port': '8081', 'endpoint': '/api/v1/casts/docs'],
+                        ['port': '8082', 'endpoint': '/api/v1/movies/docs']
+                    ]
+            services.each { service ->
+                sh """
+                    curl -s http://localhost:${service.port}${service.endpoint} || exit 1
+                """
             }
         }
+    }
+}
         stage('Docker Push') {
             environment {
                 DOCKER_PASS = credentials("DOCKER_HUB_PASS")
