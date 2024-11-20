@@ -25,23 +25,23 @@ pipeline {
             steps {
                 script {
                     def services = ['cast-service', 'movie-service']
+                    def basePort = 8000
                     def servicePorts = [:]
 
-                    services.each { service ->
-                        def DOCKER_IMAGE = "${DOCKER_ID}/${service}:${DOCKER_TAG}"
-                        echo "Running Docker container for ${service}"
-                        sh """
-                            docker rm -f ${service} || true
-                            docker run -d -p 8000:8000 --name ${service} ${DOCKER_IMAGE}
-                        """
-                        def portMapping = sh(script: "docker port ${service}", returnStdout: true).trim()
-                        if (!portMapping) {
-                            error "Failed to retrieve port mapping for ${service}"
-                        }
-                        def port = portMapping.split(':')[-1]
-                        servicePorts[service] = port
-                        echo "${service} is running on port ${port}"
+                    services.eachWithIndex { service, index ->
+                    def port = basePort + index // Attribue un port unique pour chaque service
+                    def DOCKER_IMAGE = "${DOCKER_ID}/${service}:${DOCKER_TAG}"
+                    echo "Running Docker container for ${service} on port ${port}"
+                    sh """
+                        docker rm -f ${service} || true
+                        docker run -d -p ${port}:8000 --name ${service} ${DOCKER_IMAGE}
+                    """
+                    servicePorts[service] = port
+                    echo "${service} is running on port ${port}"
                     }
+
+                    // Enregistrer les ports dans une variable d'environnement pour les étapes suivantes
+                    env.SERVICE_PORTS = servicePorts.collect { key, value -> "${key}:${value}" }.join(',')
                 }
             }
         }
@@ -68,6 +68,12 @@ pipeline {
                         'cast-service': '/api/v1/casts/docs',
                         'movie-service': '/api/v1/movies/docs'
                     ]
+
+                    def servicePorts = env.SERVICE_PORTS.tokenize(',').collectEntries {
+                        def parts = it.split(':')
+                        [(parts[0]): parts[1]]
+                    }
+
                     services.each { serviceName, endpoint ->
                         def port = servicePorts[serviceName]
                         echo "Testing ${serviceName} on http://localhost:${port}${endpoint}"
