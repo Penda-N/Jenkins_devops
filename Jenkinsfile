@@ -32,7 +32,7 @@ pipeline {
                         echo "Running Docker container for ${service}"
                         sh """
                             docker rm -f ${service} || true
-                            docker run -d -P --name ${service} ${DOCKER_IMAGE}
+                            docker run -d -p 8000:8000 --name ${service} ${DOCKER_IMAGE}
                         """
                         def portMapping = sh(script: "docker port ${service}", returnStdout: true).trim()
                         if (!portMapping) {
@@ -41,6 +41,16 @@ pipeline {
                         def port = portMapping.split(':')[-1]
                         servicePorts[service] = port
                         echo "${service} is running on port ${port}"
+                    }
+                }
+            }
+        }
+	stage('Test Container Health') {
+            steps {
+                script {
+                    def response = sh(script: "curl -s -o /dev/null -w '%{http_code}' http://localhost:80", returnStdout: true).trim()
+                    if (response != '200') {
+                        error "Service did not start successfully, HTTP status: ${response}"
                     }
                 }
             }
