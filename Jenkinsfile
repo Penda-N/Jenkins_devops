@@ -12,6 +12,7 @@ pipeline {
                     services.each { service ->
                         def DOCKER_IMAGE = "${DOCKER_ID}/${service}:${DOCKER_TAG}"
                         dir(service) {
+                            echo "Building Docker image for ${service}"
                             sh """
                                 docker build -t ${DOCKER_IMAGE} .
                             """
@@ -28,11 +29,15 @@ pipeline {
 
                     services.each { service ->
                         def DOCKER_IMAGE = "${DOCKER_ID}/${service}:${DOCKER_TAG}"
+                        echo "Running Docker container for ${service}"
                         sh """
                             docker rm -f ${service} || true
                             docker run -d -P --name ${service} ${DOCKER_IMAGE}
                         """
                         def portMapping = sh(script: "docker port ${service}", returnStdout: true).trim()
+                        if (!portMapping) {
+                            error "Failed to retrieve port mapping for ${service}"
+                        }
                         def port = portMapping.split(':')[-1]
                         servicePorts[service] = port
                         echo "${service} is running on port ${port}"
@@ -49,6 +54,7 @@ pipeline {
                     ]
                     services.each { serviceName, endpoint ->
                         def port = servicePorts[serviceName]
+                        echo "Testing ${serviceName} on http://localhost:${port}${endpoint}"
                         def retryCount = 0
                         def maxRetries = 10
                         def serviceReady = false
@@ -72,7 +78,6 @@ pipeline {
                 }
             }
         }
-
         stage('Docker Push') {
             environment {
                 DOCKER_PASS = credentials("DOCKER_HUB_PASS")
@@ -83,6 +88,7 @@ pipeline {
                     sh "docker login -u ${DOCKER_ID} -p ${DOCKER_PASS}"
                     services.each { service ->
                         def DOCKER_IMAGE = "${DOCKER_ID}/${service}:${DOCKER_TAG}"
+                        echo "Pushing Docker image for ${service}"
                         sh """
                             docker push ${DOCKER_IMAGE}
                         """
@@ -102,14 +108,15 @@ pipeline {
                     environments.each { env ->
                         services.each { service ->
                             def DOCKER_IMAGE = "${DOCKER_ID}/${service}:${DOCKER_TAG}"
+                            echo "Deploying ${service} to ${env} environment"
                             dir(service) {
                                 sh """
-                                    rm -Rf .kube
-                                    mkdir -p .kube
-                                    cat \$KUBECONFIG > .kube/config
+                                    mkdir -p ~/.kube
+                                    echo \$KUBECONFIG > ~/.kube/config
                                     cp helm/${service}/values.yaml values.yaml
                                     sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" values.yaml
                                     helm upgrade --install ${service} helm/${service} --values=values.yaml --namespace ${env}
+                                    kubectl get pods -n ${env} | grep ${service}
                                 """
                             }
                         }
@@ -130,6 +137,7 @@ pipeline {
                 def services = ['cast-service', 'movie-service']
                 services.each { service ->
                     sh "docker rm -f ${service} || true"
+                    sh "docker rmi ${DOCKER_ID}/${service}:${DOCKER_TAG} || true"
                 }
             }
         }
