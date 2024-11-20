@@ -1,7 +1,7 @@
 pipeline {
     environment {
-        DOCKER_ID = "pendand" // Docker ID
-        DOCKER_TAG = "v.${BUILD_ID}.0" // Tag basé sur le numéro de build
+        DOCKER_ID = "pendand"
+        DOCKER_TAG = "v.${BUILD_ID}.0"
     }
     agent any
     stages {
@@ -24,51 +24,54 @@ pipeline {
             steps {
                 script {
                     def services = ['cast-service', 'movie-service']
-                    def ports = ['8081', '8082'] // Ports distincts pour éviter les conflits
-                    for (int i = 0; i < services.size(); i++) {
-                        def service = services[i]
-                        def port = ports[i]
+                    def servicePorts = [:]
+
+                    services.each { service ->
                         def DOCKER_IMAGE = "${DOCKER_ID}/${service}:${DOCKER_TAG}"
                         sh """
                             docker rm -f ${service} || true
-                            docker run -d -p ${port}:80 --name ${service} ${DOCKER_IMAGE}
+                            docker run -d -P --name ${service} ${DOCKER_IMAGE}
                         """
+                        def portMapping = sh(script: "docker port ${service}", returnStdout: true).trim()
+                        def port = portMapping.split(':')[-1]
+                        servicePorts[service] = port
+                        echo "${service} is running on port ${port}"
                     }
                 }
             }
         }
-stage('Test Acceptance') {
-    steps {
-        script {
-            def services = [
-                ['port': '8081', 'endpoint': '/api/v1/casts/docs'],
-                ['port': '8082', 'endpoint': '/api/v1/movies/docs']
-            ]
-            services.each { service ->
-                // Attente que le service soit prêt
-                def retryCount = 0
-                def maxRetries = 10
-                def serviceReady = false
-                while (retryCount < maxRetries && !serviceReady) {
-                    def response = sh(script: "curl -s -o /dev/null -w '%{http_code}' http://localhost:${service.port}${service.endpoint}", returnStdout: true).trim()
-                    if (response == '200') {
-                        serviceReady = true
-                        echo "Service ${service.endpoint} is ready"
-                    } else {
-                        retryCount++
-                        echo "Waiting for ${service.endpoint} to be ready (Attempt ${retryCount}/${maxRetries})"
-                        sleep 5 // Attendre 5 secondes avant de réessayer
-                    }
-                }
+        stage('Test Acceptance') {
+            steps {
+                script {
+                    def services = [
+                        'cast-service': '/api/v1/casts/docs',
+                        'movie-service': '/api/v1/movies/docs'
+                    ]
+                    services.each { serviceName, endpoint ->
+                        def port = servicePorts[serviceName]
+                        def retryCount = 0
+                        def maxRetries = 10
+                        def serviceReady = false
 
-                // Si après les tentatives le service n'est toujours pas prêt, échouer le test
-                if (!serviceReady) {
-                    error "Service ${service.endpoint} did not become ready after ${maxRetries} attempts"
+                        while (retryCount < maxRetries && !serviceReady) {
+                            def response = sh(script: "curl -s -o /dev/null -w '%{http_code}' http://localhost:${port}${endpoint}", returnStdout: true).trim()
+                            if (response == '200') {
+                                serviceReady = true
+                                echo "Service ${endpoint} is ready"
+                            } else {
+                                retryCount++
+                                echo "Waiting for ${endpoint} to be ready (Attempt ${retryCount}/${maxRetries})"
+                                sleep 5
+                            }
+                        }
+
+                        if (!serviceReady) {
+                            error "Service ${endpoint} did not become ready after ${maxRetries} attempts"
+                        }
+                    }
                 }
             }
         }
-    }
-}
 
         stage('Docker Push') {
             environment {
@@ -119,8 +122,16 @@ stage('Test Acceptance') {
         failure {
             echo "Build failed."
             mail to: "penda.ndiaye10@gmail.com",
-                 subject: "${env.JOB_NAME} - Build #${env.BUILD_ID} Failed",
-                 body: "Check the console output for details: ${env.BUILD_URL}"
+                subject: "${env.JOB_NAME} - Build #${env.BUILD_ID} Failed",
+                body: "Check the console output for details: ${env.BUILD_URL}"
+        }
+        always {
+            script {
+                def services = ['cast-service', 'movie-service']
+                services.each { service ->
+                    sh "docker rm -f ${service} || true"
+                }
+            }
         }
     }
 }
