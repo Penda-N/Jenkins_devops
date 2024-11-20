@@ -45,12 +45,18 @@ pipeline {
                 }
             }
         }
-	stage('Test Container Health') {
+        stage('Test Container Health') {
             steps {
                 script {
-                    def response = sh(script: "curl -s -o /dev/null -w '%{http_code}' http://localhost:80", returnStdout: true).trim()
-                    if (response != '200') {
-                        error "Service did not start successfully, HTTP status: ${response}"
+                    def services = ['cast-service', 'movie-service']
+                    services.each { service ->
+                        def port = servicePorts[service]
+                        def response = sh(script: "curl -s -o /dev/null -w '%{http_code}' http://localhost:${port}", returnStdout: true).trim()
+                        if (response != '200') {
+                            error "Service ${service} did not start successfully, HTTP status: ${response}"
+                        } else {
+                            echo "${service} is healthy, HTTP status: ${response}"
+                        }
                     }
                 }
             }
