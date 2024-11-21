@@ -161,7 +161,8 @@ pipeline {
                                     sed -i "s+tag:.*+tag: ${DOCKER_TAG}+g" values.yaml
 
                                     # Déploiement avec Helm
-                                    helm upgrade --install ${service} helm/my-chart --values=helm/my-chart/values.yaml --namespace ${env} || exit 1
+                                    cp helm/my-chart/values.yaml values.yaml
+                                    helm upgrade --install ${service} helm/my-chart --values=values.yaml --namespace ${env} || exit 1
 
                                     # Vérification des pods
                                     kubectl get pods -n ${env} | grep ${service} || exit 1
