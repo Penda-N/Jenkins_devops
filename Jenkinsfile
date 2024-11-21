@@ -104,18 +104,28 @@ pipeline {
         */
         stage('Docker Push') {
             environment {
-                DOCKER_PASS = credentials("DOCKER_HUB_PASS")
+                // Le DOCKER_ID peut rester en clair car ce n'est pas une information sensible
+                DOCKER_ID = "pendand"
             }
             steps {
                 script {
                     def services = ['cast-service', 'movie-service']
-                    sh "docker login -u ${DOCKER_ID} -p ${DOCKER_PASS}"
-                    services.each { service ->
-                        def DOCKER_IMAGE = "${DOCKER_ID}/${service}:${DOCKER_TAG}"
-                        echo "Pushing Docker image for ${service}"
+
+                    // Utilisation de withCredentials pour masquer les logs sensibles
+                    withCredentials([string(credentialsId: 'DOCKER_HUB_PASS', variable: 'DOCKER_PASS')]) {
+                        // Login sécurisé
                         sh """
-                            docker push ${DOCKER_IMAGE}
+                            echo "${DOCKER_PASS}" | docker login -u ${DOCKER_ID} --password-stdin
                         """
+
+                        // Pousser chaque image Docker
+                        services.each { service ->
+                            def DOCKER_IMAGE = "${DOCKER_ID}/${service}:${DOCKER_TAG}"
+                            echo "Pushing Docker image for ${service}..."
+                            sh """
+                                docker push ${DOCKER_IMAGE}
+                            """
+                        }
                     }
                 }
             }
