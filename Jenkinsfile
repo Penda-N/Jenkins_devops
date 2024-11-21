@@ -145,12 +145,26 @@ pipeline {
                             echo "Deploying ${service} to ${env} environment"
                             dir(service) {
                                 sh """
+                                    # Préparer kubeconfig sécurisé
                                     mkdir -p ~/.kube
                                     echo \$KUBECONFIG > ~/.kube/config
-                                    cp helm/${service}/values.yaml values.yaml
-                                    sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" values.yaml
-                                    helm upgrade --install ${service} helm/my-chart${service} --values=values.yaml --namespace ${env}
-                                    kubectl get pods -n ${env} | grep ${service}
+                                    chmod 600 ~/.kube/config
+
+                                    # Vérifier et copier le fichier values.yaml
+                                    if [ ! -f helm/my-chart/values.yaml ]; then
+                                        echo "Error: values.yaml not found for ${service}"
+                                        exit 1
+                                    fi
+                                    cp helm/my-chart/values.yaml values.yaml
+
+                                    # Mettre à jour le tag dans values.yaml
+                                    sed -i "s+tag:.*+tag: ${DOCKER_TAG}+g" values.yaml
+
+                                    # Déploiement avec Helm
+                                    helm upgrade --install ${service} helm/my-chart --values=helm/my-chart/values.yaml --namespace ${env} || exit 1
+
+                                    # Vérification des pods
+                                    kubectl get pods -n ${env} | grep ${service} || exit 1
                                 """
                             }
                         }
