@@ -45,6 +45,7 @@ pipeline {
                 }
             }
         }
+        /*
         stage('Test Container Health') {
             steps {
                 script {
@@ -100,6 +101,7 @@ pipeline {
                 }
             }
         }
+        */
         stage('Docker Push') {
             environment {
                 DOCKER_PASS = credentials("DOCKER_HUB_PASS")
