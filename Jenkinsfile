@@ -149,7 +149,7 @@ pipeline {
                                     echo \$KUBECONFIG > ~/.kube/config
                                     cp helm/${service}/values.yaml values.yaml
                                     sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" values.yaml
-                                    helm upgrade --install ${service} helm/${service} --values=values.yaml --namespace ${env}
+                                    helm upgrade --install ${service} helm/my-chart${service} --values=values.yaml --namespace ${env}
                                     kubectl get pods -n ${env} | grep ${service}
                                 """
                             }
