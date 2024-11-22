@@ -141,31 +141,27 @@ pipeline {
 
                     environments.each { env ->
                         services.each { service ->
-                            def DOCKER_IMAGE = "${DOCKER_ID}/${service}:${DOCKER_TAG}"
                             echo "Deploying ${service} to ${env} environment"
-                            dir(service) {
+
+                            // Définir le chemin des manifests Kubernetes
+                            def k8sPath = "k8s/${service}"
+
+                            dir(k8sPath) {
                                 sh """
                                     # Préparer kubeconfig sécurisé
                                     mkdir -p ~/.kube
                                     echo \$KUBECONFIG > ~/.kube/config
                                     chmod 600 ~/.kube/config
 
-                                    # Vérifier et copier le fichier values.yaml
-                                    if [ ! -f helm/my-chart/values.yaml ]; then
-                                        echo "Error: values.yaml not found for ${service}"
-                                        exit 1
-                                    fi
-                                    cp helm/my-chart/values.yaml values.yaml
+                                    # Mettre à jour les images dans les manifests
+                                    sed -i "s+image:.*+image: ${DOCKER_ID}/${service}:${DOCKER_TAG}+g" ${service}-deployment.yaml
 
-                                    # Mettre à jour le tag dans values.yaml
-                                    sed -i "s+tag:.*+tag: ${DOCKER_TAG}+g" values.yaml
-
-                                    # Déploiement avec Helm
-                                    cp helm/my-chart/values.yaml values.yaml
-                                    helm upgrade --install ${service} helm/my-chart --values=values.yaml --namespace ${env} || exit 1
+                                    # Appliquer les manifests
+                                    kubectl apply -n ${env} -f ${service}-deployment.yaml
+                                    kubectl apply -n ${env} -f ${service}-service.yaml
 
                                     # Vérification des pods
-                                    kubectl get pods -n ${env} | grep ${service} || exit 1
+                                    kubectl rollout status deployment/${service} -n ${env} || exit 1
                                 """
                             }
                         }
@@ -173,7 +169,6 @@ pipeline {
                 }
             }
         }
-    }
     post {
         failure {
             echo "Build failed."
