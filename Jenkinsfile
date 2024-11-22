@@ -89,8 +89,6 @@ pipeline {
 
                                     kubectl apply -n ${env} -f ${service}-deployment.yaml
                                     kubectl apply -n ${env} -f ${service}-service.yaml
-
-                                    kubectl rollout status deployment/${service} -n ${env} || exit 1
                                 """
                             }
                         }
