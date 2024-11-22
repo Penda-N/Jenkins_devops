@@ -29,15 +29,15 @@ pipeline {
                     def servicePorts = [:]
 
                     services.eachWithIndex { service, index ->
-                    def port = basePort + index // Attribue un port unique pour chaque service
-                    def DOCKER_IMAGE = "${DOCKER_ID}/${service}:${DOCKER_TAG}"
-                    echo "Running Docker container for ${service} on port ${port}"
-                    sh """
-                        docker rm -f ${service} || true
-                        docker run -d -p ${port}:8000 --name ${service} ${DOCKER_IMAGE}
-                    """
-                    servicePorts[service] = port
-                    echo "${service} is running on port ${port}"
+                        def port = basePort + index // Attribue un port unique pour chaque service
+                        def DOCKER_IMAGE = "${DOCKER_ID}/${service}:${DOCKER_TAG}"
+                        echo "Running Docker container for ${service} on port ${port}"
+                        sh """
+                            docker rm -f ${service} || true
+                            docker run -d -p ${port}:8000 --name ${service} ${DOCKER_IMAGE}
+                        """
+                        servicePorts[service] = port
+                        echo "${service} is running on port ${port}"
                     }
 
                     // Enregistrer les ports dans une variable d'environnement pour les étapes suivantes
@@ -45,80 +45,15 @@ pipeline {
                 }
             }
         }
-        /*
-        stage('Test Container Health') {
-            steps {
-                script {
-                    def services = ['cast-service', 'movie-service']
-                    services.each { service ->
-                        def port = servicePorts[service]
-                        def response = sh(script: "curl -s -o /dev/null -w '%{http_code}' http://localhost:${port}", returnStdout: true).trim()
-                        if (response != '200') {
-                            error "Service ${service} did not start successfully, HTTP status: ${response}"
-                        } else {
-                            echo "${service} is healthy, HTTP status: ${response}"
-                        }
-                    }
-                }
-            }
-        }
-        stage('Test Acceptance') {
-            steps {
-                script {
-                    def services = [
-                        'cast-service': '/api/v1/casts/docs',
-                        'movie-service': '/api/v1/movies/docs'
-                    ]
-
-                    def servicePorts = env.SERVICE_PORTS.tokenize(',').collectEntries {
-                        def parts = it.split(':')
-                        [(parts[0]): parts[1]]
-                    }
-
-                    services.each { serviceName, endpoint ->
-                        def port = servicePorts[serviceName]
-                        echo "Testing ${serviceName} on http://localhost:${port}${endpoint}"
-                        def retryCount = 0
-                        def maxRetries = 10
-                        def serviceReady = false
-
-                        while (retryCount < maxRetries && !serviceReady) {
-                            def response = sh(script: "curl -s -o /dev/null -w '%{http_code}' http://localhost:${port}${endpoint}", returnStdout: true).trim()
-                            if (response == '200') {
-                                serviceReady = true
-                                echo "Service ${endpoint} is ready"
-                            } else {
-                                retryCount++
-                                echo "Waiting for ${endpoint} to be ready (Attempt ${retryCount}/${maxRetries})"
-                                sleep 5
-                            }
-                        }
-
-                        if (!serviceReady) {
-                            error "Service ${endpoint} did not become ready after ${maxRetries} attempts"
-                        }
-                    }
-                }
-            }
-        }
-        */
         stage('Docker Push') {
-            environment {
-                // Le DOCKER_ID peut rester en clair car ce n'est pas une information sensible
-                DOCKER_ID = "pendand"
-            }
             steps {
                 script {
                     def services = ['cast-service', 'movie-service']
 
-                    // Utilisation de withCredentials pour masquer les logs sensibles
                     withCredentials([string(credentialsId: 'DOCKER_HUB_PASS', variable: 'DOCKER_PASS')]) {
-                        // Login sécurisé
                         sh """
                             echo "${DOCKER_PASS}" | docker login -u ${DOCKER_ID} --password-stdin
                         """
-
-                        // Pousser chaque image Docker
                         services.each { service ->
                             def DOCKER_IMAGE = "${DOCKER_ID}/${service}:${DOCKER_TAG}"
                             echo "Pushing Docker image for ${service}..."
@@ -142,25 +77,19 @@ pipeline {
                     environments.each { env ->
                         services.each { service ->
                             echo "Deploying ${service} to ${env} environment"
-
-                            // Définir le chemin des manifests Kubernetes
                             def k8sPath = "k8s/${service}"
 
                             dir(k8sPath) {
                                 sh """
-                                    # Préparer kubeconfig sécurisé
                                     mkdir -p ~/.kube
                                     echo \$KUBECONFIG > ~/.kube/config
                                     chmod 600 ~/.kube/config
 
-                                    # Mettre à jour les images dans les manifests
                                     sed -i "s+image:.*+image: ${DOCKER_ID}/${service}:${DOCKER_TAG}+g" ${service}-deployment.yaml
 
-                                    # Appliquer les manifests
                                     kubectl apply -n ${env} -f ${service}-deployment.yaml
                                     kubectl apply -n ${env} -f ${service}-service.yaml
 
-                                    # Vérification des pods
                                     kubectl rollout status deployment/${service} -n ${env} || exit 1
                                 """
                             }
@@ -169,6 +98,7 @@ pipeline {
                 }
             }
         }
+    }
     post {
         failure {
             echo "Build failed."
